@@ -6,8 +6,8 @@ import (
 	"github.com/duanhf2012/origin/node"
 	"github.com/duanhf2012/origin/service"
 	"github.com/duanhf2012/origin/sysservice/tcpservice"
-	"github.com/golang/protobuf/proto"
-	"originserver/simple_tcp/msgpb"
+	"github.com/gogo/protobuf/proto"
+	msgpb "originserver/common/proto/msg"
 )
 
 func init() {
@@ -57,7 +57,7 @@ func (slf *TestTcpService) OnRequest(clientid uint64, msg proto.Message) {
 	pReq := msg.(*msgpb.Req)
 	//发送数据给客户端
 	err := slf.tcpService.SendMsg(clientid, &msgpb.Req{
-		Msg: proto.String(pReq.GetMsg()),
+		Msg: pReq.Msg,
 	})
 	if err != nil {
 		fmt.Printf("send msg is fail %+v!", err)

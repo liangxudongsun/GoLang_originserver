@@ -6,7 +6,6 @@ import (
 	"github.com/duanhf2012/origin/rpc"
 	"github.com/duanhf2012/origin/service"
 	"github.com/duanhf2012/origin/util/timer"
-	"github.com/golang/protobuf/proto"
 	"time"
 )
 
@@ -42,7 +41,7 @@ func (slf *CrontabModule) OnInit() error {
 	return nil
 }
 
-func (slf *CrontabModule) OnRun() {
+func (slf *CrontabModule) OnRun(cron *timer.Cron) {
 	fmt.Printf("CrontabModule OnRun.\n")
 }
 
@@ -74,20 +73,20 @@ func (slf *TestService1) OnInit() error {
 	return nil
 }
 
-func (slf *TestService1) ReleaseCrontabModule() {
+func (slf *TestService1) ReleaseCrontabModule(t *timer.Timer) {
 	//释放module后，定时器也会一起释放
 	slf.ReleaseModule(slf.crontabModuleId)
 }
 
-func (slf *TestService1) Loop() {
+func (slf *TestService1) Loop(t *timer.Timer) {
 	//for {
 	time.Sleep(time.Second * 1)
 	//}
 }
 
-func (slf *TestService1) RPC_Test(input *rpc.PBRpcRequestData, output *rpc.PBRpcResponseData) error {
-	output.Seq = proto.Uint64(input.GetSeq())
-	output.Error = proto.String(input.GetServiceMethod())
+func (slf *TestService1) RPC_Test(input *rpc.GoGoPBRpcRequestData, output *rpc.GoGoPBRpcResponseData) error {
+	output.Seq = input.Seq
+	output.Error = input.ServiceMethod
 
 	//panic("xxx")
 	return nil
