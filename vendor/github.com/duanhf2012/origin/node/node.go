@@ -39,7 +39,7 @@ func init() {
 
 	console.RegisterCommandBool("help",false,"<-help> This help.",usage)
 	console.RegisterCommandString("start","","<-start nodeid=nodeid> Run originserver.",startNode)
-	console.RegisterCommandBool("stop",false,"<-stop> Stop originserver process.",stopNode)
+	console.RegisterCommandString("stop","","<-stop nodeid=nodeid> Stop originserver process.",stopNode)
 	console.RegisterCommandString("config","","<-config path> Configuration file path.",setConfigPath)
 	console.RegisterCommandString("console", "", "<-console true|false> Turn on or off screen log output.", openConsole)
 	console.RegisterCommandString("loglevel", "debug", "<-loglevel debug|release|warning|error|fatal> Set loglevel.", setLevel)
@@ -91,8 +91,8 @@ func setConfigPath(val interface{}) error{
 	return nil
 }
 
-func  getRunProcessPid() (int,error) {
-	f, err := os.OpenFile(os.Args[0]+".pid", os.O_RDONLY, 0600)
+func  getRunProcessPid(nodeId int) (int,error) {
+	f, err := os.OpenFile(fmt.Sprintf("%s_%d.pid",os.Args[0],nodeId), os.O_RDONLY, 0600)
 	defer f.Close()
 	if err!= nil {
 		return 0,err
@@ -106,9 +106,9 @@ func  getRunProcessPid() (int,error) {
 	return strconv.Atoi(string(pidByte))
 }
 
-func writeProcessPid() {
+func writeProcessPid(nodeId int) {
 	//pid
-	f, err := os.OpenFile(os.Args[0]+".pid", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0600)
+	f, err := os.OpenFile(fmt.Sprintf("%s_%d.pid",os.Args[0],nodeId), os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0600)
 	defer f.Close()
 	if err != nil {
 		fmt.Println(err.Error())
@@ -129,9 +129,14 @@ func GetNodeId() int {
 func initNode(id int){
 	//1.初始化集群
 	nodeId = id
-	err := cluster.GetCluster().Init(GetNodeId())
+	err := cluster.GetCluster().Init(GetNodeId(),Setup)
 	if err != nil {
-		log.Fatal("read system config is error %+v",err)
+		log.SFatal("read system config is error ",err.Error())
+	}
+
+	err = initLog()
+	if err != nil{
+		return
 	}
 
 	//2.setup service
@@ -156,7 +161,9 @@ func initLog() error{
 		setLogPath("./log")
 	}
 
-	logger,err := log.New(logLevel,logPath,slog.LstdFlags|slog.Lshortfile)
+	localnodeinfo := cluster.GetCluster().GetLocalNodeInfo()
+	filepre := fmt.Sprintf("%s_%d_", localnodeinfo.NodeName, localnodeinfo.NodeId)
+	logger,err := log.New(logLevel,logPath,filepre,slog.LstdFlags|slog.Lshortfile,10)
 	if err != nil {
 		fmt.Printf("cannot create log file!\n")
 		return err
@@ -174,12 +181,25 @@ func Start() {
 }
 
 func stopNode(args interface{}) error {
-	isStop := args.(bool)
-	if isStop == false{
+	//1.解析参数
+	param := args.(string)
+	if param == "" {
 		return nil
 	}
 
-	processId,err := getRunProcessPid()
+	sParam := strings.Split(param,"=")
+	if len(sParam) != 2 {
+		return fmt.Errorf("invalid option %s",param)
+	}
+	if sParam[0]!="nodeid" {
+		return fmt.Errorf("invalid option %s",param)
+	}
+	nodeId,err:= strconv.Atoi(sParam[1])
+	if err != nil {
+		return fmt.Errorf("invalid option %s",param)
+	}
+
+	processId,err := getRunProcessPid(nodeId)
 	if err != nil {
 		return err
 	}
@@ -207,24 +227,19 @@ func startNode(args interface{}) error{
 		return fmt.Errorf("invalid option %s",param)
 	}
 
-	err = initLog()
-	if err != nil {
-		return err
-	}
-
-	timer.StartTimer(10*time.Millisecond,100000)
-	log.Release("Start running server.")
+	timer.StartTimer(10*time.Millisecond,1000000)
+	log.SRelease("Start running server.")
 	//2.初始化node
 	initNode(nodeId)
 
-	//3.运行集群
-	cluster.GetCluster().Start()
-
-	//4.运行service
+	//3.运行service
 	service.Start()
 
+	//4.运行集群
+	cluster.GetCluster().Start()
+
 	//5.记录进程id号
-	writeProcessPid()
+	writeProcessPid(nodeId)
 
 	//6.监听程序退出信号&性能报告
 	bRun := true
@@ -235,7 +250,7 @@ func startNode(args interface{}) error{
 	for bRun {
 		select {
 		case <-sig:
-			log.Debug("receipt stop signal.")
+			log.SRelease("receipt stop signal.")
 			bRun = false
 		case <- pProfilerTicker.C:
 			profiler.Report()
@@ -246,7 +261,7 @@ func startNode(args interface{}) error{
 	close(closeSig)
 	service.WaitStop()
 
-	log.Debug("Server is stop.")
+	log.SRelease("Server is stop.")
 	return nil
 }
 
@@ -272,7 +287,7 @@ func GetConfigDir() string {
 }
 
 func SetSysLog(strLevel string, pathname string, flag int){
-	logs,_:= log.New(strLevel,pathname,flag)
+	logs,_:= log.New(strLevel,pathname, "", flag,10)
 	log.Export(logs)
 }
 
